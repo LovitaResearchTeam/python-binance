@@ -832,6 +832,7 @@ class BinanceSocketManager:
         path = symbol.lower() + '@depth' + str(depth)
         if update_time != 250:
             path += f"@{update_time}ms"
+        print(path)
         return self._get_futures_socket(path, futures_type=futures_type)
 
     def symbol_mark_price_socket(self, symbol: str, fast: bool = True, futures_type: FuturesType = FuturesType.USD_M):
