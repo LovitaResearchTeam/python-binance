@@ -1,6 +1,6 @@
 from base64 import b64encode
 from pathlib import Path
-from typing import Dict, Optional, List, Tuple, Union
+from typing import Dict, Optional, List, Tuple, Union, Any
 
 import aiohttp
 import asyncio
@@ -34,7 +34,7 @@ class BaseClient:
     FUTURES_COIN_DATA_URL = "https://dapi.binance.{}/futures/data"
     FUTURES_COIN_DATA_TESTNET_URL = 'https://testnet.binancefuture.com/futures/data'
     OPTIONS_URL = 'https://eapi.binance.{}/eapi'
-    OPTIONS_TESTNET_URL = 'https://testnet.binanceops.{}/vapi'
+    OPTIONS_TESTNET_URL = 'https://testnet.binanceops.{}/eapi'
     PUBLIC_API_VERSION = 'v1'
     PRIVATE_API_VERSION = 'v3'
     MARGIN_API_VERSION = 'v1'
@@ -42,7 +42,7 @@ class BaseClient:
     MARGIN_API_VERSION3 = 'v3'
     MARGIN_API_VERSION4 = 'v4'
     FUTURES_API_VERSION = 'v1'
-    FUTURES_API_VERSION2 = "v2"
+    FUTURES_API_VERSION2 = 'v2'
     OPTIONS_API_VERSION = 'v1'
 
     BASE_ENDPOINT_DEFAULT = ''
@@ -137,7 +137,7 @@ class BaseClient:
 
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-        requests_params: Optional[Dict[str, str]] = None, tld: str = 'com', base_endpoint: str = BASE_ENDPOINT_DEFAULT,
+        requests_params: Optional[Dict[str, Any]] = None, tld: str = 'com', base_endpoint: str = BASE_ENDPOINT_DEFAULT,
         testnet: bool = False, private_key: Optional[Union[str, Path]] = None, private_key_pass: Optional[str] = None
     ):
         """Binance API Client constructor
@@ -217,11 +217,12 @@ class BaseClient:
     def _create_website_uri(self, path: str) -> str:
         return self.WEBSITE_URL + '/' + path
 
-    def _create_futures_api_uri(self, path: str) -> str:
+    def _create_futures_api_uri(self, path: str, version: int = 1) -> str:
         url = self.FUTURES_URL
         if self.testnet:
             url = self.FUTURES_TESTNET_URL
-        return url + '/' + self.FUTURES_API_VERSION + '/' + path
+        options = {1: self.FUTURES_API_VERSION, 2: self.FUTURES_API_VERSION2}
+        return url + '/' + options[version] + '/' + path
 
     def _create_futures_data_api_uri(self, path: str) -> str:
         url = self.FUTURES_DATA_URL
@@ -229,14 +230,14 @@ class BaseClient:
             url = self.FUTURES_DATA_TESTNET_URL
         return url + '/' + path
 
-    def _create_futures_coin_api_url(self, path: str, version=1) -> str:
+    def _create_futures_coin_api_url(self, path: str, version: int = 1) -> str:
         url = self.FUTURES_COIN_URL
         if self.testnet:
             url = self.FUTURES_COIN_TESTNET_URL
         options = {1: self.FUTURES_API_VERSION, 2: self.FUTURES_API_VERSION2}
         return url + "/" + options[version] + "/" + path
 
-    def _create_futures_coin_data_api_url(self, path: str, version=1) -> str:
+    def _create_futures_coin_data_api_url(self, path: str, version: int = 1) -> str:
         url = self.FUTURES_COIN_DATA_URL
         if self.testnet:
             url = self.FUTURES_COIN_DATA_TESTNET_URL
@@ -332,7 +333,7 @@ class Client(BaseClient):
 
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-        requests_params: Optional[Dict[str, str]] = None, tld: str = 'com',
+        requests_params: Optional[Dict[str, Any]] = None, tld: str = 'com',
         base_endpoint: str = BaseClient.BASE_ENDPOINT_DEFAULT, testnet: bool = False,
         private_key: Optional[Union[str, Path]] = None, private_key_pass: Optional[str] = None
     ):
@@ -376,8 +377,8 @@ class Client(BaseClient):
         uri = self._create_api_uri(path, signed, version)
         return self._request(method, uri, signed, **kwargs)
 
-    def _request_futures_api(self, method, path, signed=False, **kwargs) -> Dict:
-        uri = self._create_futures_api_uri(path)
+    def _request_futures_api(self, method, path, signed=False, version: int = 1, **kwargs) -> Dict:
+        uri = self._create_futures_api_uri(path, version)
 
         return self._request(method, uri, signed, True, **kwargs)
 
@@ -2121,6 +2122,116 @@ class Client(BaseClient):
         """
         return self._get('myTrades', True, data=params)
 
+    def get_current_order_count(self):
+        """Displays the user's current order count usage for all intervals.
+
+        https://binance-docs.github.io/apidocs/spot/en/#query-current-order-count-usage-trade
+
+        :returns: API response
+
+        .. code-block:: python
+            [
+
+                {
+                    "rateLimitType": "ORDERS",
+                    "interval": "SECOND",
+                    "intervalNum": 10,
+                    "limit": 10000,
+                    "count": 0
+                },
+                {
+                    "rateLimitType": "ORDERS",
+                    "interval": "DAY",
+                    "intervalNum": 1,
+                    "limit": 20000,
+                    "count": 0
+                }
+            ]
+
+        """
+        return self._get('rateLimit/order', True)
+
+    def get_prevented_matches(self, **params):
+        """Displays the list of orders that were expired because of STP.
+
+        https://binance-docs.github.io/apidocs/spot/en/#query-prevented-matches-user_data
+
+        :param symbol: required
+        :type symbol: str
+        :param preventedMatchId: optional
+        :type preventedMatchId: int
+        :param orderId: optional
+        :type orderId: int
+        :param fromPreventedMatchId: optional
+        :type fromPreventedMatchId: int
+        :param limit: optional, Default: 500; Max: 1000
+        :type limit: int
+        :param recvWindow: the number of milliseconds the request is valid for
+        :type recvWindow: int
+
+        :returns: API response
+
+        .. code-block:: python
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "preventedMatchId": 1,
+                    "takerOrderId": 5,
+                    "makerOrderId": 3,
+                    "tradeGroupId": 1,
+                    "selfTradePreventionMode": "EXPIRE_MAKER",
+                    "price": "1.100000",
+                    "makerPreventedQuantity": "1.300000",
+                    "transactTime": 1669101687094
+                }
+            ]
+        """
+        return self._get('myPreventedMatches', True, data=params)
+
+    def get_allocations(self, **params):
+        """Retrieves allocations resulting from SOR order placement.
+
+        https://binance-docs.github.io/apidocs/spot/en/#query-allocations-user_data
+
+        :param symbol: required
+        :type symbol: str
+        :param startTime: optional
+        :type startTime: int
+        :param endTime: optional
+        :type endTime: int
+        :param fromAllocationId: optional
+        :type fromAllocationId: int
+        :param orderId: optional
+        :type orderId: int
+        :param limit: optional, Default: 500; Max: 1000
+        :type limit: int
+        :param recvWindow: the number of milliseconds the request is valid for
+        :type recvWindow: int
+
+        :returns: API response
+
+        .. code-block:: python
+            [
+                {
+                    "symbol": "BTCUSDT",
+                    "allocationId": 0,
+                    "allocationType": "SOR",
+                    "orderId": 1,
+                    "orderListId": -1,
+                    "price": "1.00000000",
+                    "qty": "5.00000000",
+                    "quoteQty": "5.00000000",
+                    "commission": "0.00000000",
+                    "commissionAsset": "BTC",
+                    "time": 1687506878118,
+                    "isBuyer": true,
+                    "isMaker": false,
+                    "isAllocator": false
+                }
+            ]
+        """
+        return self._get('myAllocations', True, data=params)
+
     def get_system_status(self):
         """Get system status detail.
 
@@ -3850,6 +3961,84 @@ class Client(BaseClient):
 
         """
         return self._request_margin_api('delete', 'margin/order', signed=True, data=params)
+
+    def set_margin_max_leverage(self, **params):
+        """Adjust cross margin max leverage
+
+        https://binance-docs.github.io/apidocs/spot/en/#adjust-cross-margin-max-leverage-user_data
+
+        :param maxLeverage: required Can only adjust 3 or 5，Example: maxLeverage=3
+        :type maxLeverage: int
+
+        :returns: API response
+
+            {
+                "success": true
+            }
+
+        :raises: BinanceRequestException, BinanceAPIException
+
+        """
+        return self._request_margin_api('post', 'margin/max-leverage', signed=True, data=params)
+
+    def get_margin_transfer_history(self, **params):
+        """Query margin transfer history
+
+        https://binance-docs.github.io/apidocs/spot/en/#get-cross-margin-transfer-history-user_data
+
+        :param asset: optional
+        :type asset: str
+        :param type: optional Transfer Type: ROLL_IN, ROLL_OUT
+        :type type: str
+        :param archived: optional Default: false. Set to true for archived data from 6 months ago
+        :type archived: str
+        :param startTime: earliest timestamp to filter transactions
+        :type startTime: str
+        :param endTime: Used to uniquely identify this cancel. Automatically generated by default.
+        :type endTime: str
+        :param current: Currently querying page. Start from 1. Default:1
+        :type current: str
+        :param size: Default:10 Max:100
+        :type size: int
+        :param recvWindow: the number of milliseconds the request is valid for
+        :type recvWindow: int
+
+        :returns: API response
+
+            {
+                "rows": [
+                    {
+                        "amount": "0.10000000",
+                        "asset": "BNB",
+                        "status": "CONFIRMED",
+                        "timestamp": 1566898617,
+                        "txId": 5240372201,
+                        "type": "ROLL_IN"
+                    },
+                    {
+                        "amount": "5.00000000",
+                        "asset": "USDT",
+                        "status": "CONFIRMED",
+                        "timestamp": 1566888436,
+                        "txId": 5239810406,
+                        "type": "ROLL_OUT"
+                    },
+                    {
+                        "amount": "1.00000000",
+                        "asset": "EOS",
+                        "status": "CONFIRMED",
+                        "timestamp": 1566888403,
+                        "txId": 5239808703,
+                        "type": "ROLL_IN"
+                    }
+                ],
+                "total": 3
+            }
+
+        :raises: BinanceRequestException, BinanceAPIException
+
+        """
+        return self._request_margin_api('get', 'margin/transfer', signed=True, data=params)
 
     def get_margin_loan_details(self, **params):
         """Query loan record
@@ -6126,6 +6315,112 @@ class Client(BaseClient):
         """
         return self._request_futures_api('get', 'forceOrders', signed=True, data=params)
 
+    def futures_api_trading_status(self, **params):
+        """Get Position ADL Quantile Estimate
+
+        https://binance-docs.github.io/apidocs/futures/en/#futures-trading-quantitative-rules-indicators-user_data
+
+        :param symbol: optional
+        :type symbol: str
+
+        :returns: API response
+
+        .. code-block:: python
+
+            {
+                "indicators": { // indicator: quantitative rules indicators, value: user's indicators value, triggerValue: trigger indicator value threshold of quantitative rules.
+                    "BTCUSDT": [
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "UFR",  // Unfilled Ratio (UFR)
+                            "value": 0.05,  // Current value
+                            "triggerValue": 0.995  // Trigger value
+                        },
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "IFER",  // IOC/FOK Expiration Ratio (IFER)
+                            "value": 0.99,  // Current value
+                            "triggerValue": 0.99  // Trigger value
+                        },
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "GCR",  // GTC Cancellation Ratio (GCR)
+                            "value": 0.99,  // Current value
+                            "triggerValue": 0.99  // Trigger value
+                        },
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "DR",  // Dust Ratio (DR)
+                            "value": 0.99,  // Current value
+                            "triggerValue": 0.99  // Trigger value
+                        }
+                    ],
+                    "ETHUSDT": [
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "UFR",
+                            "value": 0.05,
+                            "triggerValue": 0.995
+                        },
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "IFER",
+                            "value": 0.99,
+                            "triggerValue": 0.99
+                        },
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "GCR",
+                            "value": 0.99,
+                            "triggerValue": 0.99
+                        }
+                        {
+                            "isLocked": true,
+                            "plannedRecoverTime": 1545741270000,
+                            "indicator": "DR",
+                            "value": 0.99,
+                            "triggerValue": 0.99
+                        }
+                    ]
+                },
+                "updateTime": 1545741270000
+            }
+
+        :raises: BinanceRequestException, BinanceAPIException
+
+        """
+        return self._request_futures_api('get', 'apiTradingStatus', signed=True, data=params)
+
+    def futures_comission_rate(self, **params):
+        """Get Futures commission rate
+
+        https://binance-docs.github.io/apidocs/futures/en/#user-commission-rate-user_data
+
+        :param symbol: required
+        :type symbol: str
+
+        :returns: API response
+
+        .. code-block:: python
+
+            {
+                "symbol": "BTCUSDT",
+                "makerCommissionRate": "0.0002",  // 0.02%
+                "takerCommissionRate": "0.0004"   // 0.04%
+            }
+
+        :raises: BinanceRequestException, BinanceAPIException
+
+        """
+        return self._request_futures_api('get', 'commissionRate', signed=True, data=params)
+
     def futures_adl_quantile_estimate(self, **params):
         """Get Position ADL Quantile Estimate
 
@@ -6276,7 +6571,7 @@ class Client(BaseClient):
         https://binance-docs.github.io/apidocs/futures/en/#future-account-balance-user_data
 
         """
-        return self._request_futures_api('get', 'balance', True, data=params)
+        return self._request_futures_api('get', 'balance', True, 2, data=params)
 
     def futures_account(self, **params):
         """Get current account information.
@@ -6284,7 +6579,7 @@ class Client(BaseClient):
         https://binance-docs.github.io/apidocs/futures/en/#account-information-user_data
 
         """
-        return self._request_futures_api('get', 'account', True, data=params)
+        return self._request_futures_api('get', 'account', True, 2, data=params)
 
     def futures_change_leverage(self, **params):
         """Change user's initial leverage of specific symbol market
@@ -6324,7 +6619,7 @@ class Client(BaseClient):
         https://binance-docs.github.io/apidocs/futures/en/#position-information-user_data
 
         """
-        return self._request_futures_api('get', 'positionRisk', True, data=params)
+        return self._request_futures_api('get', 'positionRisk', True, 2, data=params)
 
     def futures_account_trades(self, **params):
         """Get trades for the authenticated account and symbol.
@@ -6566,7 +6861,7 @@ class Client(BaseClient):
         return self._request_margin_api("get", "asset/transfer", True, data=params)
 
     def funding_wallet(self, **params):
-        return self._request_margin_api("get", "asset/get-funding-asset", True, data=params)
+        return self._request_margin_api("post", "asset/get-funding-asset", True, data=params)
 
     def get_user_asset(self, **params):
         return self._request_margin_api("post", "asset/getUserAsset", True, data=params, version=3)
@@ -7547,22 +7842,22 @@ class AsyncClient(BaseClient):
 
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-        requests_params: Optional[Dict[str, str]] = None, tld: str = 'com',
+        requests_params: Optional[Dict[str, Any]] = None, tld: str = 'com',
         base_endpoint: str = BaseClient.BASE_ENDPOINT_DEFAULT,
-        testnet: bool = False, loop=None, session_params: Optional[Dict[str, str]] = None,
+        testnet: bool = False, loop=None, session_params: Optional[Dict[str, Any]] = None,
         private_key: Optional[Union[str, Path]] = None, private_key_pass: Optional[str] = None,
     ):
 
         self.loop = loop or get_loop()
-        self._session_params: Dict[str, str] = session_params or {}
+        self._session_params: Dict[str, Any] = session_params or {}
         super().__init__(api_key, api_secret, requests_params, tld, base_endpoint, testnet, private_key, private_key_pass)
 
     @classmethod
     async def create(
         cls, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-        requests_params: Optional[Dict[str, str]] = None, tld: str = 'com',
+        requests_params: Optional[Dict[str, Any]] = None, tld: str = 'com',
         base_endpoint: str = BaseClient.BASE_ENDPOINT_DEFAULT,
-        testnet: bool = False, loop=None, session_params: Optional[Dict[str, str]] = None
+        testnet: bool = False, loop=None, session_params: Optional[Dict[str, Any]] = None
     ):
 
         self = cls(api_key, api_secret, requests_params, tld, base_endpoint, testnet, loop, session_params)
@@ -7620,8 +7915,8 @@ class AsyncClient(BaseClient):
         uri = self._create_api_uri(path, signed, version)
         return await self._request(method, uri, signed, **kwargs)
 
-    async def _request_futures_api(self, method, path, signed=False, **kwargs) -> Dict:
-        uri = self._create_futures_api_uri(path)
+    async def _request_futures_api(self, method, path, signed=False, version=1, **kwargs) -> Dict:
+        uri = self._create_futures_api_uri(path, version=version)
 
         return await self._request(method, uri, signed, True, **kwargs)
 
@@ -8066,6 +8361,18 @@ class AsyncClient(BaseClient):
         return await self._get('myTrades', True, data=params)
     get_my_trades.__doc__ = Client.get_my_trades.__doc__
 
+    async def get_current_order_count(self):
+        return await self._get('rateLimit/order', True)
+    get_current_order_count.__doc__ = Client.get_current_order_count.__doc__
+
+    async def get_prevented_matches(self, **params):
+        return await self._get('myPreventedMatches', True, data=params)
+    get_prevented_matches.__doc__ = Client.get_prevented_matches.__doc__
+
+    async def get_allocations(self, **params):
+        return await self._get('myAllocations', True, data=params)
+    get_allocations.__doc__ = Client.get_allocations.__doc__
+
     async def get_system_status(self):
         return await self._request_margin_api('get', 'system/status')
     get_system_status.__doc__ = Client.get_system_status.__doc__
@@ -8176,75 +8483,105 @@ class AsyncClient(BaseClient):
 
     async def get_isolated_margin_account(self, **params):
         return await self._request_margin_api('get', 'margin/isolated/account', True, data=params)
+    get_isolated_margin_account.__doc__ = Client.get_isolated_margin_account.__doc__
 
     async def enable_isolated_margin_account(self, **params):
         return await self._request_margin_api('post', 'margin/isolated/account', True, data=params)
+    enable_isolated_margin_account.__doc__ = Client.enable_isolated_margin_account.__doc__
 
     async def disable_isolated_margin_account(self, **params):
         return await self._request_margin_api('delete', 'margin/isolated/account', True, data=params)
+    disable_isolated_margin_account.__doc__ = Client.disable_isolated_margin_account.__doc__
 
     async def get_margin_asset(self, **params):
         return await self._request_margin_api('get', 'margin/asset', data=params)
+    get_margin_asset.__doc__ = Client.get_margin_asset.__doc__
 
     async def get_margin_symbol(self, **params):
         return await self._request_margin_api('get', 'margin/pair', data=params)
+    get_margin_symbol.__doc__ = Client.get_margin_symbol.__doc__
 
     async def get_margin_all_assets(self, **params):
         return await self._request_margin_api('get', 'margin/allAssets', data=params)
+    get_margin_all_assets.__doc__ = Client.get_margin_all_assets.__doc__
 
     async def get_margin_all_pairs(self, **params):
         return await self._request_margin_api('get', 'margin/allPairs', data=params)
+    get_margin_all_pairs.__doc__ = Client.get_margin_all_pairs.__doc__
 
     async def create_isolated_margin_account(self, **params):
         return await self._request_margin_api('post', 'margin/isolated/create', signed=True, data=params)
+    create_isolated_margin_account.__doc__ = Client.create_isolated_margin_account.__doc__
 
     async def get_isolated_margin_symbol(self, **params):
         return await self._request_margin_api('get', 'margin/isolated/pair', signed=True, data=params)
+    get_isolated_margin_symbol.__doc__ = Client.get_isolated_margin_symbol.__doc__
 
     async def get_all_isolated_margin_symbols(self, **params):
         return await self._request_margin_api('get', 'margin/isolated/allPairs', signed=True, data=params)
+    get_all_isolated_margin_symbols.__doc__ = Client.get_all_isolated_margin_symbols.__doc__
 
     async def toggle_bnb_burn_spot_margin(self, **params):
         return await self._request_margin_api('post', 'bnbBurn', signed=True, data=params)
+    toggle_bnb_burn_spot_margin.__doc__ = Client.toggle_bnb_burn_spot_margin.__doc__
 
     async def get_bnb_burn_spot_margin(self, **params):
         return await self._request_margin_api('get', 'bnbBurn', signed=True, data=params)
+    get_bnb_burn_spot_margin.__doc__ = Client.get_bnb_burn_spot_margin.__doc__
 
     async def get_margin_price_index(self, **params):
         return await self._request_margin_api('get', 'margin/priceIndex', data=params)
+    get_margin_price_index.__doc__ = Client.get_margin_price_index.__doc__
 
     async def transfer_margin_to_spot(self, **params):
         params['type'] = 2
         return await self._request_margin_api('post', 'margin/transfer', signed=True, data=params)
+    transfer_margin_to_spot.__doc__ = Client.transfer_margin_to_spot.__doc__
 
     async def transfer_spot_to_margin(self, **params):
         params['type'] = 1
         return await self._request_margin_api('post', 'margin/transfer', signed=True, data=params)
+    transfer_spot_to_margin.__doc__ = Client.transfer_spot_to_margin.__doc__
 
     async def transfer_isolated_margin_to_spot(self, **params):
         params['transFrom'] = "ISOLATED_MARGIN"
         params['transTo'] = "SPOT"
         return await self._request_margin_api('post', 'margin/isolated/transfer', signed=True, data=params)
+    transfer_isolated_margin_to_spot.__doc__ = Client.transfer_isolated_margin_to_spot.__doc__
 
     async def transfer_spot_to_isolated_margin(self, **params):
         params['transFrom'] = "SPOT"
         params['transTo'] = "ISOLATED_MARGIN"
         return await self._request_margin_api('post', 'margin/isolated/transfer', signed=True, data=params)
+    transfer_spot_to_isolated_margin.__doc__ = Client.transfer_spot_to_isolated_margin.__doc__
 
     async def create_margin_loan(self, **params):
         return await self._request_margin_api('post', 'margin/loan', signed=True, data=params)
+    create_margin_loan.__doc__ = Client.create_margin_loan.__doc__
 
     async def repay_margin_loan(self, **params):
         return await self._request_margin_api('post', 'margin/repay', signed=True, data=params)
+    repay_margin_loan.__doc__ = Client.repay_margin_loan.__doc__
 
     async def create_margin_order(self, **params):
         return await self._request_margin_api('post', 'margin/order', signed=True, data=params)
+    create_margin_order.__doc__ = Client.create_margin_order.__doc__
 
     async def cancel_margin_order(self, **params):
         return await self._request_margin_api('delete', 'margin/order', signed=True, data=params)
+    cancel_margin_order.__doc__ = Client.cancel_margin_order.__doc__
+
+    async def set_margin_max_leverage(self, **params):
+        return await self._request_margin_api('post', 'margin/max-leverage', signed=True, data=params)
+    set_margin_max_leverage.__doc__ = Client.set_margin_max_leverage.__doc__
+
+    async def get_margin_transfer_history(self, **params):
+        return await self._request_margin_api('get', 'margin/transfer', signed=True, data=params)
+    get_margin_transfer_history.__doc__ = Client.get_margin_transfer_history.__doc__
 
     async def get_margin_loan_details(self, **params):
         return await self._request_margin_api('get', 'margin/loan', signed=True, data=params)
+    get_margin_loan_details.__doc__ = Client.get_margin_loan_details.__doc__
 
     async def get_margin_repay_details(self, **params):
         return await self._request_margin_api('get', 'margin/repay', signed=True, data=params)
@@ -8557,6 +8894,12 @@ class AsyncClient(BaseClient):
     async def futures_liquidation_orders(self, **params):
         return await self._request_futures_api('get', 'forceOrders', signed=True, data=params)
 
+    async def futures_api_trading_status(self, **params):
+        return await self._request_futures_api('get', 'apiTradingStatus', signed=True, data=params)
+
+    async def futures_comission_rate(self, **params):
+        return await self._request_futures_api('get', 'commissionRate', signed=True, data=params)
+
     async def futures_adl_quantile_estimate(self, **params):
         return await self._request_futures_api('get', 'adlQuantile', signed=True, data=params)
 
@@ -8624,10 +8967,10 @@ class AsyncClient(BaseClient):
         return await self._request_futures_api('delete', 'batchOrders', True, data=params)
 
     async def futures_account_balance(self, **params):
-        return await self._request_futures_api('get', 'balance', True, data=params)
+        return await self._request_futures_api('get', 'balance', True, version=2, data=params)
 
     async def futures_account(self, **params):
-        return await self._request_futures_api('get', 'account', True, data=params)
+        return await self._request_futures_api('get', 'account', True, version=2, data=params)
 
     async def futures_change_leverage(self, **params):
         return await self._request_futures_api('post', 'leverage', True, data=params)
@@ -8642,7 +8985,7 @@ class AsyncClient(BaseClient):
         return await self._request_futures_api('get', 'positionMargin/history', True, data=params)
 
     async def futures_position_information(self, **params):
-        return await self._request_futures_api('get', 'positionRisk', True, data=params)
+        return await self._request_futures_api('get', 'positionRisk', True, version=2, data=params)
 
     async def futures_account_trades(self, **params):
         return await self._request_futures_api('get', 'userTrades', True, data=params)
@@ -8749,10 +9092,10 @@ class AsyncClient(BaseClient):
         return await self._request_margin_api("get", "asset/transfer", True, data=params)
 
     async def funding_wallet(self, **params):
-        return await self._request_margin_api("get", "asset/get-funding-asset", True, data=params)
+        return await self._request_margin_api("post", "asset/get-funding-asset", True, data=params)
 
     async def get_user_asset(self, **params):
-        return await self._request_margin_api("get", "asset/getUserAsset", True, data=params, version=3)
+        return await self._request_margin_api("post", "asset/getUserAsset", True, data=params, version=3)
 
     async def universal_transfer(self, **params):
         return await self._request_margin_api(

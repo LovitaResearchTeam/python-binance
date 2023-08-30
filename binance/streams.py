@@ -339,15 +339,15 @@ class BinanceSocketManager:
     def _get_socket(
         self, path: str, stream_url: Optional[str] = None, prefix: str = 'ws/', is_binary: bool = False,
         socket_type: BinanceSocketType = BinanceSocketType.SPOT
-    ) -> str:
+    ) -> ReconnectingWebsocket:
         conn_id = f'{socket_type}_{path}'
         if conn_id not in self._conns:
             self._conns[conn_id] = ReconnectingWebsocket(
                 path=path,
                 url=self._get_stream_url(stream_url),
                 prefix=prefix,
-                exit_coro=self._exit_socket,
-                is_binary=is_binary
+                exit_coro=lambda p: self._exit_socket(f'{socket_type}_{p}'),
+                is_binary=is_binary,
             )
 
         return self._conns[conn_id]
@@ -1209,10 +1209,10 @@ class ThreadedWebsocketManager(ThreadedApiManager):
 
     def __init__(
         self, api_key: Optional[str] = None, api_secret: Optional[str] = None,
-        requests_params: Optional[Dict[str, str]] = None, tld: str = 'com',
-        testnet: bool = False
+        requests_params: Optional[Dict[str, Any]] = None, tld: str = 'com',
+        testnet: bool = False, session_params: Optional[Dict[str, Any]] = None
     ):
-        super().__init__(api_key, api_secret, requests_params, tld, testnet)
+        super().__init__(api_key, api_secret, requests_params, tld, testnet, session_params)
         self._bsm: Optional[BinanceSocketManager] = None
 
     async def _before_socket_listener_start(self):
