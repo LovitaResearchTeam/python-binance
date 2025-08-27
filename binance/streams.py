@@ -9,7 +9,8 @@ from random import random
 from socket import gaierror
 from typing import Optional, List, Dict, Callable, Any
 
-import websockets as ws
+import websockets
+from websockets import ClientConnection
 from websockets.exceptions import ConnectionClosedError
 
 from .client import AsyncClient
@@ -58,7 +59,7 @@ class ReconnectingWebsocket:
         self._is_binary = is_binary
         self._conn = None
         self._socket = None
-        self.ws: Optional[ws.WebSocketClientProtocol] = None  # type: ignore
+        self.ws: Optional['ClientConnection'] = None  # type: ignore
         self.ws_state = WSListenerState.INITIALISING
         self._queue = asyncio.Queue()
         self._handle_read_loop = None
@@ -72,8 +73,6 @@ class ReconnectingWebsocket:
         if self._exit_coro:
             await self._exit_coro(self._path)
         self.ws_state = WSListenerState.EXITING
-        if self.ws:
-            self.ws.fail_connection()
         if self._conn and hasattr(self._conn, 'protocol'):
             await self._conn.__aexit__(exc_type, exc_val, exc_tb)
         self.ws = None
@@ -85,10 +84,10 @@ class ReconnectingWebsocket:
         await self._before_connect()
         assert self._path
         ws_url = self._url + self._prefix + self._path
-        self._conn = ws.connect(ws_url, close_timeout=0.1, **self._ws_kwargs)  # type: ignore
+        self._conn = websockets.connect(ws_url, close_timeout=0.1, **self._ws_kwargs)  # type: ignore
         try:
             self.ws = await self._conn.__aenter__()
-        except:  # noqa
+        except Exception:
             await self._reconnect()
             return
         self.ws_state = WSListenerState.STREAMING
@@ -131,10 +130,10 @@ class ReconnectingWebsocket:
                     if self.ws_state == WSListenerState.EXITING:
                         self._log.debug(f"_read_loop {self._path} break for {self.ws_state}")
                         break
-                    elif self.ws.state == ws.protocol.State.CLOSING:  # type: ignore
+                    elif self.ws.state == websockets.protocol.State.CLOSING:  # type: ignore
                         await asyncio.sleep(0.1)
                         continue
-                    elif self.ws.state == ws.protocol.State.CLOSED:  # type: ignore
+                    elif self.ws.state == websockets.protocol.State.CLOSED:  # type: ignore
                         await self._reconnect()
                     elif self.ws_state == WSListenerState.STREAMING:
                         assert self.ws
@@ -201,7 +200,7 @@ class ReconnectingWebsocket:
         return res
 
     async def _wait_for_reconnect(self):
-        while self.ws_state != WSListenerState.STREAMING and self.ws_state != WSListenerState.EXITING:
+        while self.ws_state not in [WSListenerState.STREAMING, WSListenerState.EXITING]:
             await sleep(0.1)
 
     def _get_reconnect_wait(self, attempts: int) -> int:
